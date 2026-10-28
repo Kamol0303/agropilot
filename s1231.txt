@@ -1,0 +1,862 @@
+Claude
+Planning the next step for getting the step2 archive onto the server
+Thought for 29s
+
+Checking a re-extracted archive and its output.
+
+Weighing whether a step1 archive can replace step2.
+
+Considering a text-only installer for the user’s setup.
+
+Weighing a drag-and-drop upload against a pasted installer.
+
+Weighing a pasted installer against asking for the zip again.
+
+Planning the next step for getting the step2 archive onto the server.
+
+Bu natija kutilganidek: 2-qadam hali qo’llanmagan. Shu paytgacha:
+
+agropilot-step1.zip ni qayta ochgansiz, shuning uchun pytest yana 2 passed dedi (19 emas).
+nasa/daily 404 qaytardi, chunki NASA endpointi faqat 2-qadam kodida bor.
+Ya’ni 1-qadam to’liq ishlayapti, lekin agropilot-step2.zip hali serverga tushmagan. ls -la /opt/goinfre/hasimira/*.zip natijasida faqat step1 ko’ringan edi.
+
+Zip’ni serverga olish
+Skrinshotda VS Code (server fayllari) va Chrome ko’rinadi. Bu ikki muhit alohida bo’lishi mumkin, shuning uchun fayl brauzer tushirgan joyda qolib ketgan bo’lishi mumkin.
+
+Chat’dagi 2-qadam javobining oxiridagi agropilot-step2 fayl kartasini bosing.
+Chrome’da chrome://downloads ni oching va faylning qayerga tushganini ko’ring (“Show in folder”).
+Faylni VS Code’dagi Explorer panelidagi AGROPILOT papkasiga sudrab tashlang. Remote VS Code uni serverga yuklab beradi.
+Tekshiring:
+bash
+   find /opt/goinfre/hasimira -name 'agropilot-step2.zip'
+Yo’l chiqishi kerak.
+
+Qo’llash
+Avval source ~/agro.sh qiling, prompt oldida (agro) ko’rinishi kerak. Keyin faqat buyruqlarni yozing, prompt qatorlarini emas:
+
+bash
+cd /opt/goinfre/hasimira/agropilot
+ZIP=$(find /opt/goinfre/hasimira -name 'agropilot-step2.zip' | head -1); echo "$ZIP"
+rm -rf /tmp/ap2 && unzip -oq "$ZIP" -d /tmp/ap2 && cp -r /tmp/ap2/agropilot/backend/. backend/
+ls backend/app/services/nasa
+cd backend && pytest -q
+ls natijasida cache.py gee.py mock.py power.py repository.py service.py types.py chiqsa va pytest 19 passed desa, tayyor. Keyin uvicorn’ni qayta yoqing (uvicorn app.main:app --port 8001 --reload) va boshqa terminalda nasa/daily curl’ini ishlating.
+
+Chat’da fayl kartasi umuman ko’rinmasa yoki yuklab bo’lmasa, shuni yozing. Shunda 2-qadamni terminalga yopishtiriladigan bitta o’rnatuvchi skript ko’rinishida beraman. U uzun (taxminan 40 KB), shuning uchun avval zip yo’lini sinab ko’rishni so’radim.
+
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot$ cd backend
+export PYTHONNOUSERSITE=1
+export DATABASE_URL=postgresql+psycopg2://agropilot@localhost:5433/agropilot
+pytest -q                                    # 19 passed
+uvicorn app.main:app --port 8001 --reload    # shu terminal band bo'ladi
+WARNING:root:could not open file '/etc/apt/sources.list': [Errno 13] Permission denied: '/etc/apt/sources.list'
+
+Command 'pytest' not found, but can be installed with:
+apt install python3-pytest
+Please ask your administrator.
+WARNING:root:could not open file '/etc/apt/sources.list': [Errno 13] Permission denied: '/etc/apt/sources.list'
+
+Command 'uvicorn' not found, but can be installed with:
+apt install uvicorn
+Please ask your administrator.
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot/backend$ curl "localhost:8001/api/v1/nasa/daily?lat=41.31&lon=69.24&start=2026-07-01&end=2026-07-03"
+curl: (7) Failed to connect to localhost port 8001 after 0 ms: Couldn't connect to server
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot/backend$ curl "localhost:8001/api/v1/nasa/daily?lat=41.31&lon=69.24&start=2026-07-01&end=2026-07-03"
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot/backend$    find /opt/goinfre/hasimira -name 'agropilot-step2.zip' 'agropilot-step2.zip'
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot/backend$ cd /opt/goinfre/hasimira/agropilot
+ZIP=$(find /opt/goinfre/hasimira -name 'agropilot-step2.zip' | head -1); echo "$ZIP"
+rm -rf /tmp/ap2 && unzip -oq "$ZIP" -d /tmp/ap2 && cp -r /tmp/ap2/agropilot/backend/. backend/
+ls backend/app/services/nasa
+cd backend && pytest -q
+
+unzip:  cannot find or open , .zip or .ZIP.
+__init__.py
+WARNING:root:could not open file '/etc/apt/sources.list': [Errno 13] Permission denied: '/etc/apt/sources.list'
+
+Command 'pytest' not found, but can be installed with:
+apt install python3-pytest
+Please ask your administrator.
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot/backend$
+
+Settling on pasting the installer script in parts
+Zip hali serverga tushmagan: find yana hech narsa topmadi (unzip: cannot find or open , .zip). Terminal ham yana (agro) muhitida emas edi, shuning uchun pytest topilmadi. Bundan tashqari find ... -name 'a' 'a' buyrug’i noto’g’ri yozilgan edi, u faqat bitta -name qabul qiladi.
+
+Yuklab olishni kutib o’tirmaymiz. 2-qadam fayllarini to’g’ridan-to’g’ri terminalga yopishtirasiz. Avval muhitni yoqing, prompt oldida (agro) ko’rinsin:
+
+bash
+source ~/agro.sh
+pwd     # /opt/goinfre/hasimira/agropilot/backend chiqishi kerak
+Har blokni alohida yopishtiring (faqat kodni, prompt qatorini emas).
+
+Blok 1: sozlamalar, turlar, POWER, GEE, mock
+bash
+cat > app/core/config.py <<'EOF'
+"""Ilova sozlamalari (.env dan o'qiladi)."""
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    app_env: str = "dev"
+    database_url: str = "postgresql+psycopg2://agropilot:agropilot@localhost:5432/agropilot"
+    cors_origins: str = "http://localhost:3000"
+
+    # --- NASA ma'lumotlari ---
+    use_mock_data: bool = True            # True: NASA'ga umuman murojaat qilmaydi (offline demo)
+    nasa_fallback_to_mock: bool = True    # live manba xato bersa, mock bilan to'ldiradi (is_mock=True)
+    nasa_power_url: str = "https://power.larc.nasa.gov/api/temporal/daily/point"
+    nasa_timeout_s: float = 30.0
+    cache_ttl_recent_s: int = 6 * 3600        # oxirgi 7 kunni qamragan so'rovlar uchun
+    cache_ttl_history_s: int = 30 * 86400     # to'liq o'tgan davr uchun
+
+    # Google Earth Engine (SMAP, MODIS NDVI)
+    gee_service_account: str = ""
+    gee_key_file: str = ""
+    gee_project: str = ""
+    smap_collection: str = "NASA/SMAP/SPL4SMGP/007"   # GEE katalogida eng yangi versiyani tekshiring
+    ndvi_collection: str = "MODIS/061/MOD13Q1"
+
+    # Keyingi qadamlar uchun
+    earthdata_username: str = ""
+    earthdata_password: str = ""
+    telegram_bot_token: str = ""
+    llm_api_key: str = ""
+
+    @property
+    def cors_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+EOF
+
+cat > app/services/nasa/types.py <<'EOF'
+"""NASA servislari uchun umumiy ma'lumot turlari."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field, fields as dc_fields
+from datetime import date
+
+VALUE_COLS = (
+    "t2m_mean", "t2m_max", "t2m_min", "precip_mm", "solar_kwh_m2",
+    "soil_moisture_surface", "soil_moisture_rootzone", "ndvi", "lst_k",
+)
+
+
+class NasaDataError(RuntimeError):
+    """Live NASA manbasidan ma'lumot olib bo'lmadi."""
+
+
+@dataclass
+class DailyRecord:
+    """Bir kun uchun jamlangan o'lchovlar (daily_measurements jadvaliga mos)."""
+    obs_date: date
+    t2m_mean: float | None = None            # °C
+    t2m_max: float | None = None
+    t2m_min: float | None = None
+    precip_mm: float | None = None           # mm/kun
+    solar_kwh_m2: float | None = None        # kWh/m²/kun
+    soil_moisture_surface: float | None = None   # m³/m³ (SMAP)
+    soil_moisture_rootzone: float | None = None  # m³/m³ (SMAP)
+    ndvi: float | None = None                # -1..1
+    lst_k: float | None = None               # Kelvin (ECOSTRESS; 5-qadamda)
+    is_mock: bool = False
+    sources: dict = field(default_factory=dict)
+
+    def to_json(self) -> dict:
+        d = {f.name: getattr(self, f.name) for f in dc_fields(self)}
+        d["obs_date"] = self.obs_date.isoformat()
+        return d
+
+    @classmethod
+    def from_json(cls, d: dict) -> "DailyRecord":
+        d = dict(d)
+        d["obs_date"] = date.fromisoformat(d["obs_date"])
+        return cls(**d)
+
+    def fill_from(self, other: "DailyRecord") -> None:
+        """Faqat bo'sh (None) maydonlarni `other` dan to'ldiradi."""
+        for name in VALUE_COLS:
+            if getattr(self, name) is None and getattr(other, name) is not None:
+                setattr(self, name, getattr(other, name))
+        for k, v in other.sources.items():
+            self.sources.setdefault(k, v)
+        self.is_mock = self.is_mock or other.is_mock
+
+
+def merge_series(*series: dict[date, DailyRecord]) -> dict[date, DailyRecord]:
+    """Bir nechta manba natijalarini sana bo'yicha birlashtiradi (birinchi manba ustun)."""
+    out: dict[date, DailyRecord] = {}
+    for s in series:
+        for d, rec in s.items():
+            if d in out:
+                out[d].fill_from(rec)
+            else:
+                out[d] = rec
+    return out
+
+
+def records_to_json(series: dict[date, DailyRecord]) -> list[dict]:
+    return [series[d].to_json() for d in sorted(series)]
+
+
+def records_from_json(rows: list[dict]) -> dict[date, DailyRecord]:
+    recs = [DailyRecord.from_json(r) for r in rows]
+    return {r.obs_date: r for r in recs}
+EOF
+
+cat > app/services/nasa/power.py <<'EOF'
+"""NASA POWER (daily, point) klienti.
+
+Haqiqiy javob formati (JSON):
+{
+  "type": "Feature",
+  "geometry": {"type": "Point", "coordinates": [lon, lat, elev]},
+  "properties": {"parameter": {"T2M": {"20260101": 1.2, ...}, "PRECTOTCORR": {...}, ...}},
+  "parameters": {"T2M": {"units": "C", ...}, "ALLSKY_SFC_SW_DWN": {"units": "MJ/m^2/day", ...}},
+  ...
+}
+Ma'lumot yo'q kunlar -999 bilan to'ldirilgan (fill value). POWER odatda 2-3 kun kechikadi.
+"""
+from __future__ import annotations
+
+import logging
+import time
+from datetime import date, datetime
+
+import httpx
+
+from app.core.config import get_settings
+from app.services.nasa.types import DailyRecord, NasaDataError
+
+log = logging.getLogger(__name__)
+
+POWER_PARAMS = ["T2M", "T2M_MAX", "T2M_MIN", "PRECTOTCORR", "ALLSKY_SFC_SW_DWN"]
+FILL_VALUE = -999.0
+
+
+def _clean(v) -> float | None:
+    if v is None:
+        return None
+    v = float(v)
+    return None if v <= FILL_VALUE + 1e-6 else v
+
+
+def parse_power_response(payload: dict) -> dict[date, DailyRecord]:
+    """POWER JSON javobini {sana: DailyRecord} ga aylantiradi."""
+    try:
+        par = payload["properties"]["parameter"]
+    except (KeyError, TypeError) as e:
+        raise NasaDataError(f"POWER javob formati kutilmagan: {e}") from e
+
+    # AG hamjamiyatida radiatsiya MJ/m²/kun; kWh/m²/kun ga o'tkazamiz.
+    # Birlik javobning "parameters" bo'limidan o'qiladi; yo'q bo'lsa MJ deb olinadi (AG default).
+    units = ((payload.get("parameters") or {}).get("ALLSKY_SFC_SW_DWN") or {}).get("units", "MJ/m^2/day")
+    solar_factor = 1 / 3.6 if "MJ" in units.upper() else 1.0
+
+    all_days: set[str] = set()
+    for series in par.values():
+        all_days.update(series.keys())
+
+    out: dict[date, DailyRecord] = {}
+    for key in sorted(all_days):
+        d = datetime.strptime(key, "%Y%m%d").date()
+        solar = _clean(par.get("ALLSKY_SFC_SW_DWN", {}).get(key))
+        rec = DailyRecord(
+            obs_date=d,
+            t2m_mean=_clean(par.get("T2M", {}).get(key)),
+            t2m_max=_clean(par.get("T2M_MAX", {}).get(key)),
+            t2m_min=_clean(par.get("T2M_MIN", {}).get(key)),
+            precip_mm=_clean(par.get("PRECTOTCORR", {}).get(key)),
+            solar_kwh_m2=None if solar is None else round(solar * solar_factor, 3),
+            sources={"power": "NASA POWER daily (AG)"},
+        )
+        # hamma o'lchov bo'sh kunni qoldirmaymiz
+        if any(getattr(rec, n) is not None for n in ("t2m_mean", "precip_mm", "solar_kwh_m2")):
+            out[d] = rec
+    return out
+
+
+def fetch_power_daily(
+    lat: float, lon: float, start: date, end: date,
+    *, client: httpx.Client | None = None, retries: int = 3,
+) -> dict[date, DailyRecord]:
+    """Berilgan koordinata uchun [start, end] oralig'ida kunlik POWER ma'lumotlarini tortadi."""
+    s = get_settings()
+    params = {
+        "parameters": ",".join(POWER_PARAMS),
+        "community": "AG",
+        "longitude": f"{lon:.4f}",
+        "latitude": f"{lat:.4f}",
+        "start": start.strftime("%Y%m%d"),
+        "end": end.strftime("%Y%m%d"),
+        "format": "JSON",
+    }
+    own = client is None
+    client = client or httpx.Client(timeout=s.nasa_timeout_s)
+    try:
+        last_err: Exception | None = None
+        for attempt in range(1, retries + 1):
+            try:
+                r = client.get(s.nasa_power_url, params=params)
+                if r.status_code >= 500 or r.status_code == 429:
+                    raise httpx.HTTPStatusError("server busy", request=r.request, response=r)
+                r.raise_for_status()
+                return parse_power_response(r.json())
+            except (httpx.TransportError, httpx.HTTPStatusError) as e:
+                last_err = e
+                log.warning("POWER urinish %s/%s xato: %s", attempt, retries, e)
+                time.sleep(min(2 ** attempt, 8))
+        raise NasaDataError(f"NASA POWER javob bermadi: {last_err}")
+    finally:
+        if own:
+            client.close()
+EOF
+
+cat > app/services/nasa/gee.py <<'EOF'
+"""Google Earth Engine orqali SMAP (tuproq namligi) va MODIS NDVI.
+
+earthengine-api ixtiyoriy bog'liqlik: `pip install -r requirements-gee.txt`.
+Kirish: `earthengine authenticate` yoki service account (GEE_SERVICE_ACCOUNT + GEE_KEY_FILE).
+"""
+from __future__ import annotations
+
+import logging
+from datetime import date, timedelta
+
+from app.core.config import get_settings
+from app.services.nasa.types import DailyRecord, NasaDataError
+
+log = logging.getLogger(__name__)
+_ee = None  # lazy import + initialize
+
+
+def _get_ee():
+    global _ee
+    if _ee is not None:
+        return _ee
+    try:
+        import ee
+    except ImportError as e:
+        raise NasaDataError("earthengine-api o'rnatilmagan (requirements-gee.txt)") from e
+    s = get_settings()
+    try:
+        if s.gee_service_account and s.gee_key_file:
+            creds = ee.ServiceAccountCredentials(s.gee_service_account, s.gee_key_file)
+            ee.Initialize(creds, project=s.gee_project or None)
+        else:
+            ee.Initialize(project=s.gee_project or None)
+    except Exception as e:  # noqa: BLE001
+        raise NasaDataError(f"GEE ishga tushmadi: {e}") from e
+    _ee = ee
+    return ee
+
+
+def _num(v) -> float | None:
+    return None if v is None else float(v)
+
+
+def parse_smap_features(features: list[dict]) -> dict[date, DailyRecord]:
+    """GEE FeatureCollection.getInfo()['features'] -> {sana: DailyRecord}."""
+    out: dict[date, DailyRecord] = {}
+    for f in features:
+        p = f.get("properties", {})
+        sm_s, sm_r = _num(p.get("sm_surface")), _num(p.get("sm_rootzone"))
+        if sm_s is None and sm_r is None:
+            continue
+        d = date.fromisoformat(p["date"])
+        out[d] = DailyRecord(
+            obs_date=d, soil_moisture_surface=sm_s, soil_moisture_rootzone=sm_r,
+            sources={"smap": "SMAP L4 (GEE)"},
+        )
+    return out
+
+
+def fetch_smap_daily(lat: float, lon: float, start: date, end: date) -> dict[date, DailyRecord]:
+    """SMAP L4 (3 soatlik, 9 km) -> kunlik o'rtacha sm_surface / sm_rootzone (m³/m³)."""
+    ee = _get_ee()
+    s = get_settings()
+    point = ee.Geometry.Point([lon, lat])
+    start_ee = ee.Date(start.isoformat())
+    n_days = (end - start).days + 1
+    col = (ee.ImageCollection(s.smap_collection)
+           .select(["sm_surface", "sm_rootzone"])
+           .filterDate(start.isoformat(), (end + timedelta(days=1)).isoformat()))
+
+    def per_day(i):
+        d0 = start_ee.advance(ee.Number(i), "day")
+        img = col.filterDate(d0, d0.advance(1, "day")).mean()
+        vals = img.reduceRegion(ee.Reducer.mean(), point, 9000)
+        return ee.Feature(None, vals).set("date", d0.format("YYYY-MM-dd"))
+
+    try:
+        fc = ee.FeatureCollection(ee.List.sequence(0, n_days - 1).map(per_day)).getInfo()
+    except Exception as e:  # noqa: BLE001
+        raise NasaDataError(f"SMAP so'rovi xato: {e}") from e
+    return parse_smap_features(fc.get("features", []))
+
+
+# ---------------- NDVI ----------------
+NDVI_SCALE = 0.0001   # MOD13Q1: NDVI butun son * 0.0001
+COMPOSITE_DAYS = 16
+
+
+def forward_fill_composites(
+    composites: dict[date, float], start: date, end: date, max_age_days: int = COMPOSITE_DAYS,
+) -> dict[date, float]:
+    """16 kunlik kompozit qiymatlarini kunlikka yoyadi (oxirgi qiymat max_age_days gacha amal qiladi)."""
+    out: dict[date, float] = {}
+    keys = sorted(composites)
+    d = start
+    while d <= end:
+        prev = [k for k in keys if k <= d]
+        if prev and (d - prev[-1]).days < max_age_days:
+            out[d] = composites[prev[-1]]
+        d += timedelta(days=1)
+    return out
+
+
+def parse_ndvi_features(features: list[dict]) -> dict[date, float]:
+    out: dict[date, float] = {}
+    for f in features:
+        p = f.get("properties", {})
+        raw = p.get("NDVI")
+        if raw is None:
+            continue
+        out[date.fromisoformat(p["date"])] = round(max(-1.0, min(1.0, float(raw) * NDVI_SCALE)), 4)
+    return out
+
+
+def fetch_ndvi_daily(lat: float, lon: float, start: date, end: date) -> dict[date, DailyRecord]:
+    """MODIS MOD13Q1 (250 m, 16 kunlik) NDVI -> kunlik qator (forward-fill)."""
+    ee = _get_ee()
+    s = get_settings()
+    point = ee.Geometry.Point([lon, lat])
+    col = (ee.ImageCollection(s.ndvi_collection).select("NDVI")
+           .filterDate((start - timedelta(days=COMPOSITE_DAYS)).isoformat(),
+                       (end + timedelta(days=1)).isoformat()))
+
+    def per_img(img):
+        vals = img.reduceRegion(ee.Reducer.mean(), point, 250)
+        return ee.Feature(None, vals).set("date", img.date().format("YYYY-MM-dd"))
+
+    try:
+        fc = ee.FeatureCollection(col.map(per_img)).getInfo()
+    except Exception as e:  # noqa: BLE001
+        raise NasaDataError(f"NDVI so'rovi xato: {e}") from e
+    daily = forward_fill_composites(parse_ndvi_features(fc.get("features", [])), start, end)
+    return {
+        d: DailyRecord(obs_date=d, ndvi=round(v, 4), sources={"ndvi": "MODIS MOD13Q1 (GEE)"})
+        for d, v in daily.items()
+    }
+EOF
+
+cat > app/services/nasa/mock.py <<'EOF'
+"""Internet/NASA kalitlarisiz demo uchun deterministik soxta ma'lumot (O'rta Osiyo iqlimiga yaqin).
+
+Bir xil (lat, lon, sana) uchun doim bir xil natija qaytadi. Yil boshidan simulyatsiya qilinadi,
+shuning uchun tuproq namligi yomg'irga ketma-ket javob beradi.
+"""
+from __future__ import annotations
+
+import calendar
+import math
+import random
+from datetime import date, timedelta
+from functools import lru_cache
+
+from app.services.nasa.types import DailyRecord
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+@lru_cache(maxsize=64)
+def _simulate_year(lat_key: float, lon_key: float, year: int) -> dict[date, DailyRecord]:
+    rng = random.Random(f"{lat_key:.2f}:{lon_key:.2f}:{year}")
+    lat_shift = (40.0 - lat_key) * 0.4
+    sm_s, sm_r = 0.22, 0.26
+    out: dict[date, DailyRecord] = {}
+    n_days = 366 if calendar.isleap(year) else 365
+    for i in range(n_days):
+        d = date(year, 1, 1) + timedelta(days=i)
+        doy = i + 1
+        season = math.sin(2 * math.pi * (doy - 105) / 365)       # iyul o'rtasida eng yuqori
+        t_mean = 14 + 15 * season + lat_shift + rng.gauss(0, 2)
+        t_max = t_mean + 6 + rng.uniform(0, 3)
+        t_min = t_mean - 6 - rng.uniform(0, 3)
+        wet = 0.30 if (doy < 150 or doy > 300) else 0.04            # yog'in asosan qish-bahor
+        precip = round(rng.expovariate(1 / 6), 1) if rng.random() < wet else 0.0
+        solar = max(0.5, 4.8 + 2.6 * season + rng.gauss(0, 0.4)) * (0.45 if precip > 2 else 1.0)
+        heat = max(season, 0.0)
+        sm_s = _clamp(sm_s - (0.002 + 0.006 * heat) + precip * 0.012, 0.05, 0.45)
+        sm_r = _clamp(sm_r + 0.15 * (sm_s - sm_r) - 0.0015 * heat, 0.08, 0.45)
+        ndvi = _clamp(0.18 + 0.60 * math.exp(-((doy - 195) / 50) ** 2) + rng.gauss(0, 0.015), 0.05, 0.95)
+        out[d] = DailyRecord(
+            obs_date=d,
+            t2m_mean=round(t_mean, 1), t2m_max=round(t_max, 1), t2m_min=round(t_min, 1),
+            precip_mm=precip, solar_kwh_m2=round(solar, 2),
+            soil_moisture_surface=round(sm_s, 3), soil_moisture_rootzone=round(sm_r, 3),
+            ndvi=round(ndvi, 3), lst_k=round(t_max + 273.15 + 4 + rng.gauss(0, 1.5), 1),
+            is_mock=True,
+            sources={k: "mock" for k in ("power", "smap", "ndvi", "ecostress")},
+        )
+    return out
+
+
+def generate_mock_daily(lat: float, lon: float, start: date, end: date) -> dict[date, DailyRecord]:
+    out: dict[date, DailyRecord] = {}
+    for year in range(start.year, end.year + 1):
+        # nusxa olamiz: keshlangan obyektlar tashqarida o'zgartirilmasin
+        for d, rec in _simulate_year(round(lat, 2), round(lon, 2), year).items():
+            if start <= d <= end:
+                out[d] = DailyRecord.from_json(rec.to_json())
+    return out
+EOF
+echo "BLOK 1 OK"
+Blok 2: kesh, servis, DB, API
+bash
+cat > app/services/nasa/cache.py <<'EOF'
+"""nasa_cache jadvali orqali keshlash (PostgreSQL JSONB)."""
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import Callable
+from datetime import date, timedelta
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.services.nasa.types import DailyRecord, records_from_json, records_to_json
+
+log = logging.getLogger(__name__)
+
+
+def make_key(source: str, lat: float, lon: float, start: date, end: date) -> str:
+    # 3 xona ~ 110 m: POWER (50 km), SMAP (9 km), MODIS (250 m) uchun yetarli
+    return f"{source}:{lat:.3f}:{lon:.3f}:{start:%Y%m%d}:{end:%Y%m%d}"
+
+
+def ttl_for_range(end: date, today: date | None = None) -> int:
+    """So'nggi 7 kunni qamragan so'rovlar tez eskiradi (ma'lumot hali yangilanadi)."""
+    s = get_settings()
+    today = today or date.today()
+    return s.cache_ttl_recent_s if end >= today - timedelta(days=7) else s.cache_ttl_history_s
+
+
+def cache_get(db: Session, key: str) -> dict[date, DailyRecord] | None:
+    row = db.execute(
+        text("SELECT payload FROM nasa_cache WHERE cache_key = :k AND expires_at > now()"),
+        {"k": key},
+    ).first()
+    return records_from_json(row[0]) if row else None
+
+
+def cache_set(db: Session, key: str, series: dict[date, DailyRecord], ttl_s: int) -> None:
+    db.execute(
+        text("""
+            INSERT INTO nasa_cache (cache_key, payload, fetched_at, expires_at)
+            VALUES (:k, CAST(:p AS jsonb), now(), now() + :ttl * interval '1 second')
+            ON CONFLICT (cache_key) DO UPDATE
+               SET payload = EXCLUDED.payload, fetched_at = now(), expires_at = EXCLUDED.expires_at
+        """),
+        {"k": key, "p": json.dumps(records_to_json(series)), "ttl": ttl_s},
+    )
+    db.commit()
+
+
+def cached_fetch(
+    db: Session | None, key: str, ttl_s: int, fn: Callable[[], dict[date, DailyRecord]],
+) -> dict[date, DailyRecord]:
+    """Keshdan o'qiydi, bo'lmasa fn() ni chaqirib saqlaydi. Kesh xatosi asosiy oqimni buzmaydi."""
+    if db is not None:
+        try:
+            hit = cache_get(db, key)
+            if hit is not None:
+                return hit
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            log.warning("kesh o'qishda xato: %s", e)
+    series = fn()
+    if db is not None and series:
+        try:
+            cache_set(db, key, series, ttl_s)
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            log.warning("kesh yozishda xato: %s", e)
+    return series
+
+
+def purge_expired(db: Session) -> int:
+    n = db.execute(text("DELETE FROM nasa_cache WHERE expires_at <= now()")).rowcount
+    db.commit()
+    return n
+EOF
+
+cat > app/services/nasa/service.py <<'EOF'
+"""Asosiy kirish nuqtasi: POWER + SMAP + NDVI ni birlashtirib kunlik qatorlar qaytaradi."""
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from datetime import date
+
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings, get_settings
+from app.services.nasa import cache, gee, mock, power
+from app.services.nasa.types import DailyRecord, NasaDataError, merge_series
+
+log = logging.getLogger(__name__)
+MAX_SPAN_DAYS = 366
+
+
+def _validate(lat: float, lon: float, start: date, end: date) -> None:
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("lat/lon diapazondan tashqarida")
+    if start > end:
+        raise ValueError("start end'dan keyin bo'lishi mumkin emas")
+    if (end - start).days + 1 > MAX_SPAN_DAYS:
+        raise ValueError(f"oraliq {MAX_SPAN_DAYS} kundan oshmasin")
+
+
+def get_daily_series(
+    lat: float, lon: float, start: date, end: date,
+    *, db: Session | None = None, settings: Settings | None = None,
+) -> list[DailyRecord]:
+    """[start, end] uchun kunlik NASA o'lchovlari (sana bo'yicha tartiblangan).
+
+    - USE_MOCK_DATA=true: faqat mock.
+    - Aks holda har manba (POWER, SMAP, NDVI) alohida olinadi va keshlanadi;
+      xato bo'lsa va NASA_FALLBACK_TO_MOCK=true bo'lsa, o'sha maydonlar mock bilan
+      to'ldiriladi (is_mock=True, sources da ko'rsatiladi).
+    """
+    s = settings or get_settings()
+    _validate(lat, lon, start, end)
+
+    if s.use_mock_data:
+        return [r for _, r in sorted(mock.generate_mock_daily(lat, lon, start, end).items())]
+
+    ttl = cache.ttl_for_range(end)
+    fallback = mock.generate_mock_daily(lat, lon, start, end) if s.nasa_fallback_to_mock else None
+
+    def run(name: str, fn: Callable[[], dict[date, DailyRecord]]) -> dict[date, DailyRecord]:
+        key = cache.make_key(name, lat, lon, start, end)
+        try:
+            return cache.cached_fetch(db, key, ttl, fn)
+        except NasaDataError as e:
+            if fallback is None:
+                raise
+            log.warning("%s uchun live ma'lumot yo'q (%s) -> mock", name, e)
+            return {}
+
+    power_s = run("power", lambda: power.fetch_power_daily(lat, lon, start, end))
+    smap_s = run("smap", lambda: gee.fetch_smap_daily(lat, lon, start, end))
+    ndvi_s = run("ndvi", lambda: gee.fetch_ndvi_daily(lat, lon, start, end))
+    merged = merge_series(power_s, smap_s, ndvi_s)
+
+    if fallback is not None:
+        # live ma'lumotda bo'sh qolgan maydonlarni mock bilan to'ldiramiz
+        for d, mrec in fallback.items():
+            rec = merged.setdefault(d, DailyRecord(obs_date=d))
+            before = {n: getattr(rec, n) for n in ("t2m_mean", "soil_moisture_surface", "ndvi")}
+            rec.fill_from(mrec)
+            # qaysi manba mock ekanini aniq belgilaymiz
+            if before["t2m_mean"] is None:
+                rec.sources["power"] = "mock"
+            if before["soil_moisture_surface"] is None:
+                rec.sources["smap"] = "mock"
+            if before["ndvi"] is None:
+                rec.sources["ndvi"] = "mock"
+            rec.is_mock = any(v == "mock" for v in rec.sources.values())
+    return [r for _, r in sorted(merged.items())]
+EOF
+
+cat > app/services/nasa/repository.py <<'EOF'
+"""daily_measurements ga saqlash (upsert) va dala uchun sinxronlash."""
+from __future__ import annotations
+
+import uuid
+from datetime import date, timedelta
+
+from sqlalchemy import func, text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
+from app.models import DailyMeasurement
+from app.services.nasa.service import get_daily_series
+from app.services.nasa.types import VALUE_COLS, DailyRecord
+
+CHUNK = 500
+
+
+def upsert_measurements(db: Session, field_id: uuid.UUID | str, records: list[DailyRecord]) -> int:
+    """Qatorlarni (field_id, obs_date) bo'yicha yozadi.
+
+    Mavjud qiymat yangi NULL bilan o'chirilmaydi (COALESCE); sources JSONB birlashtiriladi;
+    is_mock yangi yozuvdagi qiymatga yangilanadi (real ma'lumot mock'ni almashtiradi).
+    """
+    if not records:
+        return 0
+    t = DailyMeasurement.__table__
+    for i in range(0, len(records), CHUNK):
+        part = records[i:i + CHUNK]
+        rows = [
+            {"field_id": field_id, "obs_date": r.obs_date, "is_mock": r.is_mock, "sources": r.sources,
+             **{c: getattr(r, c) for c in VALUE_COLS}}
+            for r in part
+        ]
+        stmt = insert(t).values(rows)
+        set_ = {c: func.coalesce(stmt.excluded[c], t.c[c]) for c in VALUE_COLS}
+        set_["is_mock"] = stmt.excluded.is_mock
+        set_["sources"] = t.c.sources.op("||")(stmt.excluded.sources)
+        db.execute(stmt.on_conflict_do_update(constraint="uq_measurement_field_date", set_=set_))
+    db.commit()
+    return len(records)
+
+
+def get_field_centroid(db: Session, field_id: uuid.UUID | str) -> tuple[float, float] | None:
+    """(lat, lon) — dala poligonining markazi."""
+    row = db.execute(
+        text("SELECT ST_Y(centroid), ST_X(centroid) FROM fields WHERE id = :id"),
+        {"id": str(field_id)},
+    ).first()
+    return (float(row[0]), float(row[1])) if row and row[0] is not None else None
+
+
+def sync_field_measurements(
+    db: Session, field_id: uuid.UUID | str, start: date | None = None, end: date | None = None,
+) -> dict:
+    """Dala markazi uchun NASA ma'lumotini olib DB ga yozadi. Standart: oxirgi 14 kun."""
+    end = end or date.today()
+    start = start or end - timedelta(days=13)
+    pos = get_field_centroid(db, field_id)
+    if pos is None:
+        raise LookupError(f"dala topilmadi: {field_id}")
+    records = get_daily_series(pos[0], pos[1], start, end, db=db)
+    n = upsert_measurements(db, field_id, records)
+    return {
+        "field_id": str(field_id), "start": start.isoformat(), "end": end.isoformat(), "rows": n,
+        "mock_rows": sum(1 for r in records if r.is_mock),
+    }
+EOF
+
+cat > app/services/nasa/__init__.py <<'EOF'
+from app.services.nasa.service import get_daily_series
+from app.services.nasa.repository import sync_field_measurements, upsert_measurements
+from app.services.nasa.types import DailyRecord, NasaDataError
+
+__all__ = ["get_daily_series", "sync_field_measurements", "upsert_measurements", "DailyRecord", "NasaDataError"]
+EOF
+
+cat > app/api/v1/nasa.py <<'EOF'
+"""NASA ma'lumotlarini ko'rish va dalaga sinxronlash (sinov/admin endpointlari)."""
+import uuid
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.services.nasa import NasaDataError, get_daily_series, sync_field_measurements
+
+router = APIRouter(prefix="/nasa", tags=["nasa"])
+
+
+@router.get("/daily")
+def preview_daily(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    start: date = Query(default_factory=lambda: date.today() - timedelta(days=6)),
+    end: date = Query(default_factory=date.today),
+    db: Session = Depends(get_db),
+):
+    """Koordinata uchun kunlik NASA qatorlari (DB ga yozmaydi, keshdan foydalanadi)."""
+    try:
+        recs = get_daily_series(lat, lon, start, end, db=db)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except NasaDataError as e:
+        raise HTTPException(502, str(e)) from e
+    return {"lat": lat, "lon": lon, "count": len(recs), "days": [r.to_json() for r in recs]}
+
+
+@router.post("/sync/{field_id}")
+def sync_field(
+    field_id: uuid.UUID,
+    start: date | None = None,
+    end: date | None = None,
+    db: Session = Depends(get_db),
+):
+    """Dala markazi uchun ma'lumotni olib daily_measurements ga yozadi."""
+    try:
+        return sync_field_measurements(db, field_id, start, end)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except NasaDataError as e:
+        raise HTTPException(502, str(e)) from e
+EOF
+
+cat > app/api/v1/router.py <<'EOF'
+from fastapi import APIRouter
+from app.api.v1 import health, nasa
+
+api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(health.router)
+api_router.include_router(nasa.router)
+# Keyingi qadamlarda: fields, recommendations, suvradar, soil ...
+EOF
+
+printf '# Ixtiyoriy: SMAP va MODIS NDVI uchun Google Earth Engine\nearthengine-api>=1.0\n' > requirements-gee.txt
+echo "BLOK 2 OK"
+Ikkala blokdan keyin tezkor tekshiruv (testlarsiz ham ishlaydi):
+
+bash
+ls app/services/nasa
+uvicorn app.main:app --port 8001 --reload
+Boshqa terminalda curl "localhost:8001/api/v1/nasa/daily?lat=41.31&lon=69.24&start=2026-07-01&end=2026-07-03" ni ishlating. "is_mock":true bilan 3 ta kunlik qator qaytishi kerak. Bu terminalda (agro) shart emas, curl uchun kerak emas.
+
+Blok 3: testlar (19 ta)
+Bu blokni faqat Blok 1-2 ishlagandan keyin yopishtiring. Men uni keyingi xabarda bering yoki hozir 19 passed ni ko’rishni xohlasangiz, ayting. Test fayli ~9 KB, lekin 2-qadamning ishlashini serverda isbotlaydi. Bloklar xatosiz o’tsa, shu zahotiyoq yuboraman.
+
+Xato chiqsa, terminal chiqishini yuboring. Eng ko’p uchraydigan sabab: Blok yopishtirilayotganda bitta qator uzilib qolishi. Bunda ls app/services/nasa da fayl yetishmaydi.
+
+
+You are out of free messages until 6:50 PM
+
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot$ cd backend export PYTHONNOUSERSITE=1 export DATABASE_URL=postgresql+psycopg2://agropilot@localhost:5433/agropilot pytest -q # 19 passed uvicorn app.main:app --port 8001 --reload # shu terminal band bo'ladi WARNING:
+
+pasted
+
+
+
+hasimira@ti-r3:/opt/goinfre/hasimira/agropilot$ curl "localhost:8001/api/v1/nasa/daily?lat=41.31&lon=69.24&start=2026-07-01&end=2026-07-03" curl: (7) Failed to connect to localhost port 8001 after 0 ms: Couldn't connect to server hasimira@ti-r3:/opt/goinfre/hasimira/agropilot$ cd backend export PYTH
+
+pasted
+
+
+
+
+Claude is AI and can make mistakes.
+Agropilot step2 · ZIP
+Agropilot step2
+ZIP
+No preview available
+
+
+
+
+
+
+
+
+Claude finished the response

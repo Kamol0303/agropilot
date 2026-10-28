@@ -1,0 +1,2 @@
+# Ixtiyoriy: SMAP va MODIS NDVI uchun Google Earth Engine
+earthengine-api>=1.0
